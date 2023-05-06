@@ -1,8 +1,8 @@
 # Set the environment variable
 import os
-os.environ["OPENAI_API_KEY"] = "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" # OpenAi API key
-os.environ["GOOGLE_CSE_ID"] = "b5ff08ee5e6314b12" # Google custom search engine ID
-os.environ["GOOGLE_API_KEY"] = "AIzaSyCqVHWQmsaFLkOQGgKrOlYL4LPqAYqsZhk" # Google API key
+os.environ["OPENAI_API_KEY"] = "" # OpenAi API key
+os.environ["GOOGLE_CSE_ID"] = "" # Google custom search engine ID
+os.environ["GOOGLE_API_KEY"] = "" # Google API key
 
 # Import the LLM wrapper
 from langchain.llms import OpenAI
