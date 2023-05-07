@@ -1,83 +1,80 @@
-# Set the environment variable
-import os
-os.environ["OPENAI_API_KEY"] = "" # OpenAi API key
-os.environ["GOOGLE_CSE_ID"] = "" # Google custom search engine ID
-os.environ["GOOGLE_API_KEY"] = "" # Google API key
+# Load the environment
+from dotenv import load_dotenv, find_dotenv
+load_dotenv(find_dotenv())
 
-# Import the LLM wrapper
-from langchain.llms import OpenAI
-
-# Construct prompt templates
-from langchain.prompts import (
+# Load langchain modules
+from langchain.document_loaders import YoutubeLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain.vectorstores import FAISS
+from langchain.chat_models import ChatOpenAI
+from langchain.chains import LLMChain
+from dotenv import find_dotenv, load_dotenv
+from langchain.prompts.chat import (
     ChatPromptTemplate,
-    PromptTemplate,
     SystemMessagePromptTemplate,
-    AIMessagePromptTemplate,
     HumanMessagePromptTemplate,
 )
-from langchain.schema import (
-    AIMessage,
-    HumanMessage,
-    SystemMessage
-)
+import textwrap
 
-# Import agent prerquisites
-from langchain.agents import load_tools
-from langchain.agents.load_tools import get_all_tool_names
-from langchain.agents import initialize_agent
-from langchain.agents import AgentType
-from langchain.utilities import GoogleSearchAPIWrapper
-#from langchain import ConversationChain
+embeddings = OpenAIEmbeddings()
 
-# Set model temperature
-llm = OpenAI(temperature=0)
+# Outputs a searchable database from the transcript of a YT video 
+def create_db_from_youtube_urls(video_urls):
+    transcripts = []
+    for url in video_urls:
+        loader = YoutubeLoader.from_youtube_url(url)
+        transcripts.extend(loader.load())
 
-# List available tools
-# print(get_all_tool_names())
+    # Split transcript in to a list of documents
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+    docs = text_splitter.split_documents(transcripts)
 
-# Load tools
-tools = load_tools(["google-search", "llm-math"], llm=llm)
-search = GoogleSearchAPIWrapper(k=10) # Pass in number of results to return
+    # Uses embeddings to convert split documents in to a vector (numerical) representation
+    # Then, uses FAISS to create a db that can be used for efficient similarity search
+    db = FAISS.from_documents(docs, embeddings)
+    return db
 
-# Initialize the  agent with the tools and the LLM
-agent = initialize_agent(
-    tools, llm, agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True
-)
 
-# Generates the correct template depending on whether the user specified any portfolio focuses, e.g. ESG investing
-def constructTemplate(age, investment_goal, risk_profile, budget, focuses):
-    if len(focuses) == 0:
-        promptTemplate = f'''Create the best passive investment portfolio for the user based on their requirements.
-                            The response should be a list of each investment in the portfolio and the number of dollars per month to allocate to that investment.
-                            The user is {age} years old with a monthly budget of {budget}. The goal of the portfolio should be {investment_goal} with a {risk_profile} risk profile.
-                        '''
-    
-    if len(focuses) == 1:
-        promptTemplate = f'''You must create an investment portfolio adhering to the following requirements.
-                            The target is {age} years old with a maximum monthly budget of {budget}. The goal of the portfolio should be {investment_goal} with a {risk_profile} risk profile. The focus of the portfolio should be {focuses[0]} investing.
-                            Respond with a list of ticker symbols for each investment in your suggested portfolio and the monthly budget allocation to each investment in dollars.
-                        '''
+# gpt-3.5-turbo can handle up to 4097 tokens. Setting the chunksize to 1000 and k to 4 maximizes
+# the number of tokens to analyze.
+def get_response_from_query(db, query, k=4):
+
+    docs = db.similarity_search(query, k=k)
+    docs_page_content = " ".join([d.page_content for d in docs])
+
+    chat = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0.2)
+
+    # Template to use for the system message prompt
+    template = """
+        You are a journalist that writing a magazine article based on video transcripts: {docs}
         
-    return promptTemplate
+        Only use the factual information from the transcripts to write the article.
+
+        Your answer should be verbose and as detailed as possible, like a front page magazine article.
+        """
+
+    system_message_prompt = SystemMessagePromptTemplate.from_template(template)
+
+    # Human question prompt
+    human_template = "{question}"
+    human_message_prompt = HumanMessagePromptTemplate.from_template(human_template)
+
+    chat_prompt = ChatPromptTemplate.from_messages(
+        [system_message_prompt, human_message_prompt]
+    )
+
+    chain = LLMChain(llm=chat, prompt=chat_prompt)
+
+    response = chain.run(question=query, docs=docs_page_content)
+    response = response.replace("\n", "")
+    return response, docs
 
 
-# User requirements. Manually set for now, but we will present the user with a form to collect this information
-Age=25
-Investment_Goal="retirement"
-Risk_Profile="medium"
-Budget=1000
-focusSelections = ["ESG"]
+# Example usage:
+video_urls = ["https://www.youtube.com/watch?v=L_Guz73e6fw", "https://www.youtube.com/watch?v=qpoRO378qRY", "https://www.youtube.com/watch?v=Gfr50f6ZBvo"]
+db = create_db_from_youtube_urls(video_urls)
 
-# Create the template
-template = constructTemplate(Age, Investment_Goal, Risk_Profile, Budget, focusSelections)
-
-# Create a PromptTemplate instance, passing in the template we created
-prompt = PromptTemplate(
-    input_variables=[],
-    template=template,
-)
-
-# Check that the prompt was constructed correctly.
-#print(prompt)
-
-agent.run(prompt)
+query = "What is an interesting development or discussion happening in the field of AI?"
+response, docs = get_response_from_query(db, query)
+print(textwrap.fill(response, width=50))
