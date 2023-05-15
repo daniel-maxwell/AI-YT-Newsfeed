@@ -1,3 +1,5 @@
+import numpy
+
 # Load the environment
 from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv())
@@ -25,7 +27,7 @@ def create_db_from_youtube_urls(video_urls):
     for url in video_urls:
         loader = YoutubeLoader.from_youtube_url(url)
         transcripts.extend(loader.load())
-
+        
     # Split transcript in to a list of documents
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     docs = text_splitter.split_documents(transcripts)
@@ -51,7 +53,7 @@ def get_response_from_query(db, query, k=4):
         
         Only use the factual information from the transcripts to write the article.
 
-        Your answer should be verbose and as detailed as possible, like a front page magazine article.
+        Your answer should feature a title as well as a verbose and detailed body like a front page magazine article.
         """
 
     system_message_prompt = SystemMessagePromptTemplate.from_template(template)
@@ -72,9 +74,11 @@ def get_response_from_query(db, query, k=4):
 
 
 # Example usage:
+'''
 video_urls = ["https://www.youtube.com/watch?v=L_Guz73e6fw", "https://www.youtube.com/watch?v=qpoRO378qRY", "https://www.youtube.com/watch?v=Gfr50f6ZBvo"]
 db = create_db_from_youtube_urls(video_urls)
 
 query = "What is an interesting development or discussion happening in the field of AI?"
 response, docs = get_response_from_query(db, query)
 print(textwrap.fill(response, width=50))
+'''
